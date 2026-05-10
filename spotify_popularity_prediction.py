@@ -258,3 +258,105 @@ gb_cls = GradientBoostingClassifier(
 )
 gb_cls.fit(X_train, y_train_cls)
 cls_results.append(cls_metrics("Gradient Boosting", y_test_cls, gb_cls.predict(X_test)))
+
+# STEP 8 — 5-Fold Cross-Validation 
+
+print("\n" + "=" * 60)
+print("STEP 8 — 5-Fold Cross-Validation (Gradient Boosting)")
+print("=" * 60)
+
+kf       = KFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+cv_rmses = []
+
+for fold, (tr_idx, val_idx) in enumerate(kf.split(X_train), 1):
+    m = GradientBoostingRegressor(
+        n_estimators=300, learning_rate=0.05, max_depth=6,
+        subsample=0.8, random_state=RANDOM_STATE
+    )
+    m.fit(X_train[tr_idx], y_train_reg[tr_idx])
+    fold_rmse = float(np.sqrt(mean_squared_error(
+        y_train_reg[val_idx], m.predict(X_train[val_idx])
+    )))
+    cv_rmses.append(fold_rmse)
+    print(f"  Fold {fold}: RMSE = {fold_rmse:.2f}")
+
+cv_mean = float(np.mean(cv_rmses))
+cv_std  = float(np.std(cv_rmses))
+print(f"\n  CV RMSE: {cv_mean:.2f} ± {cv_std:.2f}")
+
+cv_df = pd.DataFrame({"Fold": list(range(1, 6)),
+                       "RMSE": [round(r, 4) for r in cv_rmses]})
+cv_df.loc[len(cv_df)] = ["Mean ± Std", f"{cv_mean:.4f} ± {cv_std:.4f}"]
+
+# STEP 9 — Feature Importance via SHAP 
+
+print("\n" + "=" * 60)
+print("STEP 9 — Feature Importance (SHAP)")
+print("=" * 60)
+
+explainer   = shap.TreeExplainer(gb_reg)
+shap_values = explainer.shap_values(X_test)
+mean_shap   = np.abs(shap_values).mean(axis=0)
+shap_df     = pd.DataFrame({
+    "Feature":   FEATURE_COLS,
+    "Mean_SHAP": mean_shap.round(4)
+}).sort_values("Mean_SHAP", ascending=False)
+
+print(shap_df.head(10).to_string(index=False))
+
+# SHAP bar chart
+fig, ax = plt.subplots(figsize=(9, 6))
+shap_df.head(12).sort_values("Mean_SHAP").plot(
+    kind="barh", x="Feature", y="Mean_SHAP",
+    color="#1DB954", edgecolor="black", legend=False, ax=ax
+)
+ax.set_title("Feature Importance — Mean |SHAP| Value (Gradient Boosting)", fontsize=12)
+ax.set_xlabel("Mean |SHAP| Value")
+plt.tight_layout()
+plt.savefig(PLOT_DIR / "03_shap_feature_importance.png", dpi=150)
+plt.close()
+print("  Saved → plots/03_shap_feature_importance.png")
+
+# Actual vs Predicted scatter
+plt.figure(figsize=(6, 5))
+plt.scatter(y_test_reg, gb_pred, alpha=0.3, color="#1DB954", s=10)
+plt.plot([0, 100], [0, 100], "r--")
+plt.xlabel("Actual Popularity")
+plt.ylabel("Predicted Popularity")
+plt.title("Actual vs. Predicted — Gradient Boosting")
+plt.tight_layout()
+plt.savefig(PLOT_DIR / "04_actual_vs_predicted.png", dpi=150)
+plt.close()
+print("  Saved → plots/04_actual_vs_predicted.png")
+
+# Residuals plot
+residuals = y_test_reg - gb_pred
+plt.figure(figsize=(6, 5))
+plt.scatter(gb_pred, residuals, alpha=0.3, color="steelblue", s=10)
+plt.axhline(0, color="red", linestyle="--")
+plt.xlabel("Predicted Popularity")
+plt.ylabel("Residual")
+plt.title("Residual Plot — Gradient Boosting")
+plt.tight_layout()
+plt.savefig(PLOT_DIR / "05_residuals.png", dpi=150)
+plt.close()
+print("  Saved → plots/05_residuals.png")
+
+# STEP 10 — Save All Results
+
+print("\n" + "=" * 60)
+print("STEP 10 — Saving Results")
+print("=" * 60)
+
+pd.DataFrame(reg_results).to_csv(OUT_DIR / "results_regression.csv", index=False)
+pd.DataFrame(cls_results).to_csv(OUT_DIR / "results_classification.csv", index=False)
+cv_df.to_csv(OUT_DIR / "results_cv.csv", index=False)
+shap_df.to_csv(OUT_DIR / "shap_importance.csv", index=False)
+
+print("  outputs/results_regression.csv")
+print("  outputs/results_classification.csv")
+print("  outputs/results_cv.csv")
+print("  outputs/shap_importance.csv")
+print("  outputs/plots/  (5 figures)")
+print("\n✓ Pipeline complete.")
+
